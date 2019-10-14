@@ -1,17 +1,15 @@
 /**
- * Virtual Time Kernel Module
- * For Heterogeneous Distributed
- * Embedded Linux Environment
- * Author: Christopher Hannon, Jiaqi Yan, Brian Liu
- **/
+ * Virtual time kernel module for heterogeneous distributed embedded linux.
+ * Authors: Christopher Hannon, Jiaqi Yan, Brian Liu.
+ */
 #include <asm/segment.h>
 #include <asm/uaccess.h>
 #include <linux/buffer_head.h>
 #include <linux/fs.h>
-#include <linux/gpio.h>                 // gpio stuff
+#include <linux/gpio.h>
 #include <linux/init.h>
-#include <linux/interrupt.h>            // irq  code
-#include <linux/kernel.h>               // :)
+#include <linux/interrupt.h>
+#include <linux/kernel.h>
 #include <linux/kobject.h>
 #include <linux/kthread.h>
 #include <linux/module.h>
@@ -25,7 +23,7 @@
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Jin Lab");
-MODULE_DESCRIPTION("Distributed Virtual time synchronization module");
+MODULE_DESCRIPTION("Distributed virtual time synchronization module");
 MODULE_VERSION("0.5");
 
 static unsigned int gpioSIG = 7;   // Using CE1 to output high or low
@@ -33,7 +31,7 @@ static unsigned int gpioSIG2 = 8;  // Listen to rising edge (pause)
 static unsigned int gpioSIG3 = 24; // Listen to falling edge (resume)
 
 /**
- * Brian: CE1 to output high or low, GPIO5 to listening for falling | 2018Mar8th
+ * Brian: CE1 to output high or low, GPIO5 to listening for falling
  * Deprecated:
  *     gpio 21 on 2B static
  *     try 25 to see if pin broken 7; // pin for talking // gpio21 on model b+
@@ -55,7 +53,7 @@ static int all_pid_nrs[MAX_NUM_PIDS] = {0};
 static int sequential_io(enum IO io);
 static int sequential_io_round_robin(enum IO io);
 
-/* PID variables for tracking processes in VT */
+// PID variables for tracking processes in VT.
 static int pid_01 = 0;
 static int pid_02 = 0;
 static int pid_03 = 0;
@@ -73,17 +71,18 @@ static int pid_14 = 0;
 static int pid_15 = 0;
 static int pid_16 = 0;
 
-/* variable to ensure round robin pause/resume ops */
+// Variable to ensure round robin pause/resume ops.
 unsigned int round_robin = 0;
-
-/* default time dilation factor for clocks (x1000) see various references for
- * more details */
+// Default time dilation factor for clocks (x1000).
 static int tdf = 1000;
+// Time in nano seconds when processes are frozen.
 static s64 freeze_now = 0;
-/* name of filesystem accessable from user space */
+// Name of filesystem accessable from user space.
 static char vtName[6] = "vtXXX";
 
-/* core function for pausing */
+/**
+ * @brief Core function for pausing processes.
+ */
 void pause(void) {
 #ifdef BENCHMARK
   unsigned long long OHseconds;
@@ -137,7 +136,9 @@ void pause(void) {
 #endif // BENCHMARK
 }
 
-/** @brief Function to resume pids in VT */
+/**
+ * @brief Function to resume processes in VT.
+ */
 void resume(void) {
 #ifdef BENCHMARK
   unsigned long long OH_R_seconds;
@@ -189,7 +190,9 @@ void resume(void) {
 #endif // BENCHMARK
 }
 
-/** @brief Function to add pids to VT */
+/**
+ * @brief Function to add pids to VT.
+ */
 static int dilate_proc(int pid) {
   int ret = 0;
   char tdf_str[TDF_STR_LEN];
@@ -201,7 +204,7 @@ static int dilate_proc(int pid) {
 }
 
 /**
- * Hold a read lock, and get pid structs from process numbers.
+ * @brief Hold a read lock, and get pid structs from process numbers.
  * Caller must allocate results with MAX_NUM_PIDS NULLs.
  */
 static size_t all_pids_from_nrs(struct pid *results[]) {
@@ -217,10 +220,6 @@ static size_t all_pids_from_nrs(struct pid *results[]) {
 }
 
 static int sequential_io(enum IO io) {
-  /**
-   * Because of the break in the for loop,
-   * pids should be added to the next available
-   */
   int rc = 0;
   size_t num_procs, i;
   struct timespec ts;
@@ -269,10 +268,6 @@ static int sequential_io(enum IO io) {
 }
 
 static int sequential_io_round_robin(enum IO io) {
-  /**
-   * Because of the break in the for loop,
-   * pids should be added to the next available
-   */
   int rc = 0;
   size_t num_procs, i, c;
   struct timespec ts;
@@ -321,31 +316,28 @@ static int sequential_io_round_robin(enum IO io) {
   return 0;
 }
 
-/* SYSFS stuff */
-
-/** @brief A callback function to display the vt tdf */
-static ssize_t tdf_show(struct kobject *kobj, struct kobj_attribute *attr,
+/**
+ * @brief Callback function to display the vt tdf.
+ */
+static ssize_t tdf_show(struct kobject *kobj,
+                        struct kobj_attribute *attr,
                         char *buf) {
   return sprintf(buf, "%d\n", tdf);
 }
 
-/** @brief A callback function to store the vt tdf */
-static ssize_t tdf_store(struct kobject *kobj, struct kobj_attribute *attr,
+/**
+ * @brief Callback function to store the vt tdf.
+ */
+static ssize_t tdf_store(struct kobject *kobj,
+                         struct kobj_attribute *attr,
                          const char *buf, size_t count) {
-  /**
-   * buf is the text input from sysfs.
-   * we should convert this to an integer.
-   */
   int ret;
-
   ret = kstrtoint(buf, 10, &tdf);
   if (ret < 0) return ret;
-  /* we should overwrite any existing tdf */
-  sequential_io(DILATE);
+  sequential_io(DILATE);  // Overwrite any existing tdf.
   return count;
 }
 
-// clang-format off
 static SHOW_HANDLER(01)
 static SHOW_HANDLER(02)
 static SHOW_HANDLER(03)
@@ -379,61 +371,49 @@ static STORE_HANDLER(14, 13)
 static STORE_HANDLER(15, 14)
 static STORE_HANDLER(16, 15)
 
-/* @brief A callback function to display the vt mode */
+/** 
+ * @brief Callback function to display the vt mode.
+ */
 static ssize_t mode_show(struct kobject *kobj,
-                         struct kobj_attribute *attr, char *buf) {
+                         struct kobj_attribute *attr,
+                         char *buf) {
   switch (mode) {
   case ENABLED:
     return sprintf(buf, "freeze\n");
   case DISABLED:
     return sprintf(buf, "unfreeze\n");
   default:
-    return sprintf(buf, "LKM ERROR\n"); // whoops
+    return sprintf(buf, "LKM ERROR\n");
   }
 }
-// clang-format on
 
-/* @brief A callback function to store the vt mode using enum*/
-static ssize_t mode_store(struct kobject *kobj, struct kobj_attribute *attr,
-                          const char *buf, size_t count) {
+/**
+ * @brief Callback function to store the vt mode.
+ */
+static ssize_t mode_store(struct kobject *kobj,
+                          struct kobj_attribute *attr,
+                          const char *buf,
+                          size_t count) {
   if (strncmp(buf, "freeze", count - 1) == 0) {
     mode = ENABLED;
 #ifndef QUIET
     VT_PRINTK("VT-GPIO: pause\n");
 #endif
-    /**
-     * vt has been triggered locally
-     * we need to quickly change to output mode
-     */
+    // vt has been triggered locally,
+    // we need to quickly change to output mode
     gpio_direction_output(gpioSIG, 1);
-
-    /*
-     * interrupt does not get called automatically
-     * so we need to pause manually for the caller
-     */
-    // pause(); // Brian: let the pause be called by irq
-    // printk(KERN_INFO "VT-GPIO: value of pin: %d\n",
-    // gpio_get_value(gpioSIG));
   } else if (strncmp(buf, "unfreeze", count - 1) == 0) {
     mode = DISABLED;
 #ifndef QUIET
     VT_PRINTK("VT-GPIO: resume\n");
 #endif
-    /**
-     * chgn cfg, go low
-     */
+    // change cfg, go low
     gpio_direction_output(gpioSIG, 0);
-    // printk(KERN_INFO "VT-GPIO: value of pin: %d\n",
-    // gpio_get_value(gpioSIG));
     gpio_direction_input(gpioSIG);
-    // printk(KERN_INFO "VT-GPIO: value of pin: %d\n",
-    // gpio_get_value(gpioSIG)); resume(); // this should get called throuigh
-    // the interrupt
   }
   return count;
 }
 
-/* Attributes */
 static struct kobj_attribute mode_attr =
     __ATTR(mode, 0660, mode_show, mode_store);
 static struct kobj_attribute tdf_attr = __ATTR(tdf, 0660, tdf_show, tdf_store);
@@ -455,8 +435,6 @@ DECLARE_PID_ATTR(14);
 DECLARE_PID_ATTR(15);
 DECLARE_PID_ATTR(16);
 
-/* Attribute struct */
-// clang-format off
 static struct attribute *vt_attrs[] = {
     &mode_attr.attr, &tdf_attr.attr,
     &pid_01_attr.attr, &pid_02_attr.attr, &pid_03_attr.attr, &pid_04_attr.attr,
@@ -465,9 +443,7 @@ static struct attribute *vt_attrs[] = {
     &pid_13_attr.attr, &pid_14_attr.attr, &pid_15_attr.attr, &pid_16_attr.attr,
     NULL,
 };
-// clang-format on
 
-/* Attribute group */
 static struct attribute_group attr_group = {
     .name = vtName,
     .attrs = vt_attrs,
@@ -475,23 +451,26 @@ static struct attribute_group attr_group = {
 
 static struct kobject *vt_kobj;
 
-/** @brief handler for rising signal */
+/**
+ * @brief Software interrupt handler for rising signal.
+ */
 static irq_handler_t vtgpio_irq_handler(unsigned int irq, void *dev_id,
                                         struct pt_regs *regs) {
   trace_printk(KERN_INFO "rise\n");
   pause();
-  return (irq_handler_t)IRQ_HANDLED; // return that we all good
+  return (irq_handler_t)IRQ_HANDLED;
 }
 
-/** @brief handler for falling signal */
+/**
+ * @brief Software interrupt handler for falling signal.
+ */
 static irq_handler_t vtgpio_irq_handler_fall(unsigned int irq, void *dev_id,
                                              struct pt_regs *regs) {
   trace_printk(KERN_INFO "fall\n");
   resume();
-  return (irq_handler_t)IRQ_HANDLED; // return that we all good
+  return (irq_handler_t)IRQ_HANDLED;
 }
 
-/** @brief Function to initize kernel module */
 static int __init vtgpio_init(void) {
   int result = 0;
   int res = 0;
@@ -529,14 +508,14 @@ static int __init vtgpio_init(void) {
   gpio_request(gpioSIG2, "sysfs");
   gpio_request(gpioSIG3, "sysfs");
   gpio_direction_input(gpioSIG);  // default to input to listen
-  gpio_direction_input(gpioSIG2); // default to input to listen
-  gpio_direction_input(gpioSIG3); // default to input to listen
+  gpio_direction_input(gpioSIG2);
+  gpio_direction_input(gpioSIG3);
   gpio_set_debounce(gpioSIG, DEBOUNCE_TIME);
   gpio_set_debounce(gpioSIG2, DEBOUNCE_TIME);
   gpio_set_debounce(gpioSIG3, DEBOUNCE_TIME);
-  gpio_export(gpioSIG, true);  // true = we should be able to change direction
-  gpio_export(gpioSIG2, true); // true = we should be able to change direction
-  gpio_export(gpioSIG3, true); // true = we should be able to change direction
+  gpio_export(gpioSIG, true);     // true = able to change direction
+  gpio_export(gpioSIG2, true);
+  gpio_export(gpioSIG3, true);
 
   irqNumber = gpio_to_irq(gpioSIG3);
   printk(KERN_INFO "VT-GPIO: Input signal is mapped to IRQ: %d\n",
@@ -558,7 +537,6 @@ static int __init vtgpio_init(void) {
   return result;
 }
 
-/** @brief exit function to clean up */
 static void __exit vtgpio_exit(void) {
   printk(KERN_INFO "VT-GPIO: Exiting LKM\n");
   kobject_put(vt_kobj);
@@ -619,9 +597,13 @@ struct file *file_open(const char *path, int flags, int rights) {
   return filp;
 }
 
-void file_close(struct file *file) { filp_close(file, NULL); }
+void file_close(struct file *file) {
+  filp_close(file, NULL);
+}
 
-int file_read(struct file *file, unsigned long long offset, unsigned char *data,
+int file_read(struct file *file,
+              unsigned long long offset,
+              unsigned char *data,
               unsigned int size) {
   mm_segment_t oldfs;
   int ret;
@@ -635,8 +617,10 @@ int file_read(struct file *file, unsigned long long offset, unsigned char *data,
   return ret;
 }
 
-int file_write(struct file *file, unsigned long long offset,
-               unsigned char *data, unsigned int size) {
+int file_write(struct file *file,
+               unsigned long long offset,
+               unsigned char *data,
+               unsigned int size) {
   mm_segment_t oldfs;
   int ret;
 
