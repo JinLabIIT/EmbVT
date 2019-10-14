@@ -9,15 +9,19 @@
 #include <linux/gpio.h>
 #include <linux/init.h>
 #include <linux/interrupt.h>
+#include <linux/jiffies.h>
 #include <linux/kernel.h>
 #include <linux/kobject.h>
 #include <linux/kthread.h>
 #include <linux/module.h>
-#include <linux/sched.h>
+#include <linux/moduleparam.h>
 #include <linux/pid.h>
+#include <linux/sched.h>
 #include <linux/slab.h>
 #include <linux/string.h>
+#include <linux/stat.h>
 #include <linux/sysfs.h>
+#include <linux/timer.h>
 
 #include "vtgpio.h"
 
@@ -65,6 +69,25 @@ static int tdf = 1000;
 static s64 freeze_now = 0;
 // Name of filesystem accessable from user space.
 static char vt_name[6] = "vtXXX";
+
+static uint period = 0;
+module_param(period, uint, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
+MODULE_PARM_DESC(period, "Period in milliseconds for periodic synchronization requests");
+
+struct timer_list vt_timer;
+static unsigned long leftover = 0; // Leftover time for rescheduled vt_timer.
+
+/**
+ * VT Timer's callback function.
+ */
+static void vt_timer_handler(unsigned long data) {
+  if (mode == DISABLED) {
+    mode = ENABLED;
+    // so that we know whether we resume from interrupt or periodic event.
+    leftover = 0;
+    pause();
+  }
+}
 
 /**
  * @brief Core function for pausing processes.
@@ -465,9 +488,19 @@ static ssize_t mode_store(struct kobject *kobj,
   return count;
 }
 
-static struct kobj_attribute mode_attr =
-    __ATTR(mode, 0660, mode_show, mode_store);
+static ssize_t syncpause_show(struct kobject *kojb,
+                              struct kobj_attribute *attr,
+                              char *buf) {
+  if (mode == ENABLED && leftover == 0) {
+    return sprintf(buf, "1");
+  } else {
+    return sprintf(buf, "0");
+  }
+}
+
+static struct kobj_attribute mode_attr = __ATTR(mode, 0660, mode_show, mode_store);
 static struct kobj_attribute tdf_attr = __ATTR(tdf, 0660, tdf_show, tdf_store);
+static struct kobj_attribute syncpause_attr = __ATTR_RO(syncpause);
 
 DECLARE_PID_ATTR(01);
 DECLARE_PID_ATTR(02);
@@ -487,7 +520,7 @@ DECLARE_PID_ATTR(15);
 DECLARE_PID_ATTR(16);
 
 static struct attribute *vt_attrs[] = {
-    &mode_attr.attr, &tdf_attr.attr,
+    &mode_attr.attr, &tdf_attr.attr, &syncpause_attr.attr,
     &pid_01_attr.attr, &pid_02_attr.attr, &pid_03_attr.attr, &pid_04_attr.attr,
     &pid_05_attr.attr, &pid_06_attr.attr, &pid_07_attr.attr, &pid_08_attr.attr,
     &pid_09_attr.attr, &pid_10_attr.attr, &pid_11_attr.attr, &pid_12_attr.attr,
@@ -508,7 +541,14 @@ static struct kobject *vt_kobj;
 static irq_handler_t vtgpio_irq_handler(unsigned int irq, void *dev_id,
                                         struct pt_regs *regs) {
   trace_printk(KERN_INFO "rise\n");
+
+  // Record how long until the timer expires, then cancel it.
+  if (timer_pending(&vt_timer) && time_is_after_jiffies(vt_timer.expires)) {
+    leftover = vt_timer.expires - jiffies;
+    del_timer(&vt_timer);
+  }
   pause();
+
   return (irq_handler_t)IRQ_HANDLED;
 }
 
@@ -518,7 +558,15 @@ static irq_handler_t vtgpio_irq_handler(unsigned int irq, void *dev_id,
 static irq_handler_t vtgpio_irq_handler_fall(unsigned int irq, void *dev_id,
                                              struct pt_regs *regs) {
   trace_printk(KERN_INFO "fall\n");
+
   resume();
+  if (leftover > 0) { // Resumed from interrupt event.
+    vt_timer.expires = jiffies + leftover;
+  } else { // Resumed from synchronization event.
+    vt_timer.expires = jiffies + msecs_to_jiffies(period);
+  }
+  add_timer(&vt_timer);
+
   return (irq_handler_t)IRQ_HANDLED;
 }
 
@@ -585,6 +633,15 @@ static int __init vtgpio_init(void) {
   printk(KERN_INFO "VT-GPIO: The interrupt rising request result is %d\n",
          result);
 
+  if (period > 0) {
+    init_timer(&vt_timer);
+    vt_timer.expires = jiffies + msecs_to_jiffies(period);;
+    vt_timer.function = vt_timer_handler;
+    vt_timer.data = 0;
+    add_timer(&vt_timer);
+    printk(KERN_INFO "VT-GPIO: Enable periodic mode with timer\n");
+  }
+
   return result;
 }
 
@@ -600,6 +657,11 @@ static void __exit vtgpio_exit(void) {
   gpio_free(gpio_sig3);
   free_irq(irq_num2, NULL);
   gpio_free(gpio_sig2);
+
+  if (period > 0 && timer_pending(&vt_timer)) {
+    del_timer(&vt_timer);
+  }
+
   printk(KERN_INFO "VT-GPIO: Successfully leaving LKM\n");
 }
 
