@@ -26,12 +26,12 @@ MODULE_AUTHOR("Jin Lab");
 MODULE_DESCRIPTION("Distributed virtual time synchronization module");
 MODULE_VERSION("0.5");
 
-static unsigned int gpioSIG = 7;   // Using CE1 to output high or low
-static unsigned int gpioSIG2 = 8;  // Listen to rising edge (pause)
-static unsigned int gpioSIG3 = 24; // Listen to falling edge (resume)
+static unsigned int gpio_sig1 = 7;  // Using CE1 to output high or low
+static unsigned int gpio_sig2 = 8;  // Listen to rising edge (pause)
+static unsigned int gpio_sig3 = 24; // Listen to falling edge (resume)
 
-static unsigned int irqNumber;
-static unsigned int irqNumber2;
+static unsigned int irq_num1;
+static unsigned int irq_num2;
 
 static enum modes mode = DISABLED;
 static int all_pid_nrs[MAX_NUM_PIDS] = {0};
@@ -64,15 +64,15 @@ static int tdf = 1000;
 // Time in nano seconds when processes are frozen.
 static s64 freeze_now = 0;
 // Name of filesystem accessable from user space.
-static char vtName[6] = "vtXXX";
+static char vt_name[6] = "vtXXX";
 
 /**
  * @brief Core function for pausing processes.
  */
 void pause(void) {
 #ifdef BENCHMARK
-  unsigned long long OHseconds;
-  unsigned long long OHns;
+  unsigned long long oh_secs;
+  unsigned long long oh_nsecs;
   struct timespec seconds;
   struct timespec seconds_end;
 
@@ -97,14 +97,14 @@ void pause(void) {
   getnstimeofday(&seconds_end);
 
   if (seconds_end.tv_nsec > seconds.tv_nsec) {
-    OHseconds = seconds_end.tv_sec - seconds.tv_sec;
-    OHns = seconds_end.tv_nsec - seconds.tv_nsec;
+    oh_secs = seconds_end.tv_sec - seconds.tv_sec;
+    oh_nsecs = seconds_end.tv_nsec - seconds.tv_nsec;
   } else {
-    OHseconds = seconds_end.tv_sec - 1 - seconds.tv_sec;
-    OHns = seconds_end.tv_nsec - (SEC_NSEC + seconds.tv_nsec);
+    oh_secs = seconds_end.tv_sec - 1 - seconds.tv_sec;
+    oh_nsecs = seconds_end.tv_nsec - (SEC_NSEC + seconds.tv_nsec);
   }
   printk(KERN_INFO "VT-GPIO_BENCHMARK: Pause ; %llu ; %llu ",
-         ((unsigned long long)OHseconds), ((unsigned long long)OHns));
+         ((unsigned long long)oh_secs), ((unsigned long long)oh_nsecs));
 #ifndef QUIET
   VT_PRINTK("VT-GPIO_TIME: TIME-RISE: %llu %llu nanoseconds",
             (unsigned long long)seconds_end.tv_sec,
@@ -123,8 +123,8 @@ void pause(void) {
  */
 void resume(void) {
 #ifdef BENCHMARK
-  unsigned long long OH_R_seconds;
-  unsigned long long OH_R_ns;
+  unsigned long long oh_secs;
+  unsigned long long oh_nsecs;
   struct timespec seconds;
   struct timespec seconds_end;
 
@@ -149,14 +149,14 @@ void resume(void) {
   getnstimeofday(&seconds_end);
 
   if (seconds_end.tv_nsec > seconds.tv_nsec) {
-    OH_R_seconds = seconds_end.tv_sec - seconds.tv_sec;
-    OH_R_ns = seconds_end.tv_nsec - seconds.tv_nsec;
+    oh_secs = seconds_end.tv_sec - seconds.tv_sec;
+    oh_nsecs = seconds_end.tv_nsec - seconds.tv_nsec;
   } else {
-    OH_R_seconds = seconds_end.tv_sec - 1 - seconds.tv_sec;
-    OH_R_ns = seconds_end.tv_nsec - (SEC_NSEC + seconds.tv_nsec);
+    oh_secs = seconds_end.tv_sec - 1 - seconds.tv_sec;
+    oh_nsecs = seconds_end.tv_nsec - (SEC_NSEC + seconds.tv_nsec);
   }
   printk(KERN_INFO "VT-GPIO_BENCHMARK: Resume ; %llu ; %llu ",
-         ((unsigned long long)OH_R_seconds), ((unsigned long long)OH_R_ns));
+         ((unsigned long long)oh_secs), ((unsigned long long)oh_nsecs));
 #ifndef QUIET
   VT_PRINTK("VT-GPIO_TIME: TIME-FALL: %llu %llu nanoseconds",
             (unsigned long long)seconds_end.tv_sec,
@@ -452,15 +452,15 @@ static ssize_t mode_store(struct kobject *kobj,
 #endif
     // vt has been triggered locally,
     // we need to quickly change to output mode
-    gpio_direction_output(gpioSIG, 1);
+    gpio_direction_output(gpio_sig1, 1);
   } else if (strncmp(buf, "unfreeze", count - 1) == 0) {
     mode = DISABLED;
 #ifndef QUIET
     VT_PRINTK("VT-GPIO: resume\n");
 #endif
     // change cfg, go low
-    gpio_direction_output(gpioSIG, 0);
-    gpio_direction_input(gpioSIG);
+    gpio_direction_output(gpio_sig1, 0);
+    gpio_direction_input(gpio_sig1);
   }
   return count;
 }
@@ -496,7 +496,7 @@ static struct attribute *vt_attrs[] = {
 };
 
 static struct attribute_group attr_group = {
-    .name = vtName,
+    .name = vt_name,
     .attrs = vt_attrs,
 };
 
@@ -528,19 +528,19 @@ static int __init vtgpio_init(void) {
 
   printk(KERN_INFO
          "VT-GPIO: Initializing the Virtual Time GPIO LKM\n");
-  if (!gpio_is_valid(gpioSIG)) {
-    printk(KERN_INFO "VT-GPIO: pin %d not valid\n", gpioSIG);
+  if (!gpio_is_valid(gpio_sig1)) {
+    printk(KERN_INFO "VT-GPIO: pin %d not valid\n", gpio_sig1);
     return -ENODEV;
   }
-  if (!gpio_is_valid(gpioSIG2)) {
-    printk(KERN_INFO "VT-GPIO: pin %d not valid\n", gpioSIG2);
+  if (!gpio_is_valid(gpio_sig2)) {
+    printk(KERN_INFO "VT-GPIO: pin %d not valid\n", gpio_sig2);
     return -ENODEV;
   }
-  if (!gpio_is_valid(gpioSIG3)) {
-    printk(KERN_INFO "VT-GPIO: pin %d not valid\n", gpioSIG3);
+  if (!gpio_is_valid(gpio_sig3)) {
+    printk(KERN_INFO "VT-GPIO: pin %d not valid\n", gpio_sig3);
     return -ENODEV;
   }
-  sprintf(vtName, "VT%d", gpioSIG);
+  sprintf(vt_name, "VT%d", gpio_sig1);
   vt_kobj = kobject_create_and_add("vt", kernel_kobj->parent);
 
   if (!vt_kobj) {
@@ -555,32 +555,32 @@ static int __init vtgpio_init(void) {
     return res;
   }
 
-  gpio_request(gpioSIG, "sysfs");
-  gpio_request(gpioSIG2, "sysfs");
-  gpio_request(gpioSIG3, "sysfs");
-  gpio_direction_input(gpioSIG);  // default to input to listen
-  gpio_direction_input(gpioSIG2);
-  gpio_direction_input(gpioSIG3);
-  gpio_set_debounce(gpioSIG, DEBOUNCE_TIME);
-  gpio_set_debounce(gpioSIG2, DEBOUNCE_TIME);
-  gpio_set_debounce(gpioSIG3, DEBOUNCE_TIME);
-  gpio_export(gpioSIG, true);     // true = able to change direction
-  gpio_export(gpioSIG2, true);
-  gpio_export(gpioSIG3, true);
+  gpio_request(gpio_sig1, "sysfs");
+  gpio_request(gpio_sig2, "sysfs");
+  gpio_request(gpio_sig3, "sysfs");
+  gpio_direction_input(gpio_sig1);  // default to input to listen
+  gpio_direction_input(gpio_sig2);
+  gpio_direction_input(gpio_sig3);
+  gpio_set_debounce(gpio_sig1, DEBOUNCE_TIME);
+  gpio_set_debounce(gpio_sig2, DEBOUNCE_TIME);
+  gpio_set_debounce(gpio_sig3, DEBOUNCE_TIME);
+  gpio_export(gpio_sig1, true);     // true = able to change direction
+  gpio_export(gpio_sig2, true);
+  gpio_export(gpio_sig3, true);
 
-  irqNumber = gpio_to_irq(gpioSIG3);
+  irq_num1 = gpio_to_irq(gpio_sig3);
   printk(KERN_INFO "VT-GPIO: Input signal is mapped to IRQ: %d\n",
-         irqNumber);
-  irqNumber2 = gpio_to_irq(gpioSIG2);
+         irq_num1);
+  irq_num2 = gpio_to_irq(gpio_sig2);
   printk(KERN_INFO "VT-GPIO: Input signal is mapped to IRQ: %d\n",
-         irqNumber2);
+         irq_num2);
 
-  result = request_irq(irqNumber, (irq_handler_t)vtgpio_irq_handler,
+  result = request_irq(irq_num1, (irq_handler_t)vtgpio_irq_handler,
                        IRQF_TRIGGER_RISING, "vt_gpio_handler", NULL);
   printk(KERN_INFO "VT-GPIO: The interrupt rising request result is %d\n",
          result);
 
-  result = request_irq(irqNumber2, (irq_handler_t)vtgpio_irq_handler_fall,
+  result = request_irq(irq_num2, (irq_handler_t)vtgpio_irq_handler_fall,
                        IRQF_TRIGGER_FALLING, "vt_gpio_handler_fall", NULL);
   printk(KERN_INFO "VT-GPIO: The interrupt rising request result is %d\n",
          result);
@@ -591,15 +591,15 @@ static int __init vtgpio_init(void) {
 static void __exit vtgpio_exit(void) {
   printk(KERN_INFO "VT-GPIO: Exiting LKM\n");
   kobject_put(vt_kobj);
-  gpio_unexport(gpioSIG);
-  gpio_unexport(gpioSIG2);
-  gpio_unexport(gpioSIG3);
+  gpio_unexport(gpio_sig1);
+  gpio_unexport(gpio_sig2);
+  gpio_unexport(gpio_sig3);
 
-  free_irq(irqNumber, NULL);
-  gpio_free(gpioSIG);
-  gpio_free(gpioSIG3);
-  free_irq(irqNumber2, NULL);
-  gpio_free(gpioSIG2);
+  free_irq(irq_num1, NULL);
+  gpio_free(gpio_sig1);
+  gpio_free(gpio_sig3);
+  free_irq(irq_num2, NULL);
+  gpio_free(gpio_sig2);
   printk(KERN_INFO "VT-GPIO: Successfully leaving LKM\n");
 }
 
