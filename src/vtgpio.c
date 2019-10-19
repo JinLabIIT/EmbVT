@@ -30,20 +30,6 @@ static unsigned int gpioSIG = 7;   // Using CE1 to output high or low
 static unsigned int gpioSIG2 = 8;  // Listen to rising edge (pause)
 static unsigned int gpioSIG3 = 24; // Listen to falling edge (resume)
 
-/**
- * Brian: CE1 to output high or low, GPIO5 to listening for falling
- * Deprecated:
- *     gpio 21 on 2B static
- *     try 25 to see if pin broken 7; // pin for talking // gpio21 on model b+
- *     I think 7 and 8 for banana pi 21 and 20 for raspberry pi
- *
- * To install use insmod vtgpio.ko and lsmod to see the module
- * To uninstall use rmmod vtgpio and lsmod to confirm
- * to pause write freeze/unfreeze to ....
- * /sys/vt/VT7/mode i.e. echo 'freeze' > /sys/vt/VT7/mode
- */
-unsigned int active = 1;
-static unsigned int num_ints = 0;
 static unsigned int irqNumber;
 static unsigned int irqNumber2;
 
@@ -101,10 +87,6 @@ void pause(void) {
 #endif // QUIET
 #endif // BENCHMARK
 
-  /* read list of pids */
-  /* kickoff kthreads to resume processes */
-  num_ints++;
-
 #ifdef ROUND_ROBIN
   sequential_io_round_robin(FREEZE);
 #else
@@ -156,8 +138,6 @@ void resume(void) {
   VT_PRINTK("VT-GPIO: Falling Edge detected");
 #endif // QUIET
 #endif // BENCHMARK
-
-  num_ints++;
 
 #ifdef ROUND_ROBIN
   sequential_io_round_robin(RESUME);
