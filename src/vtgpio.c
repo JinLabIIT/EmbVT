@@ -170,6 +170,77 @@ void resume(void) {
 #endif // BENCHMARK
 }
 
+// Helper functions for writing sysfs fields.
+static struct file *file_open(const char *path, int flags, int rights) {
+  struct file *filp = NULL;
+  mm_segment_t oldfs;
+  int err = 0;
+
+  oldfs = get_fs();
+  set_fs(get_ds());
+  filp = filp_open(path, flags, rights);
+  set_fs(oldfs);
+  if (IS_ERR(filp)) {
+    err = PTR_ERR(filp);
+    return NULL;
+  }
+  return filp;
+}
+
+static void file_close(struct file *file) {
+  filp_close(file, NULL);
+}
+
+static int file_write(struct file *file,
+               unsigned long long offset,
+               unsigned char *data,
+               unsigned int size) {
+  mm_segment_t oldfs;
+  int ret;
+
+  oldfs = get_fs();
+  set_fs(get_ds());
+
+  ret = vfs_write(file, data, size, &offset);
+
+  set_fs(oldfs);
+  return ret;
+}
+
+static int file_sync(struct file *file) {
+  vfs_fsync(file, 0);
+  return 0;
+}
+
+static int write_proc_field(pid_t pid, char *field, char *val) {
+  int ret;
+  struct file *proc_file;
+  char path[PATH_MAX];
+  size_t val_len = strlen(val);
+
+  sprintf(path, "/proc/%d/%s", pid, field);
+  proc_file = file_open(path, O_WRONLY, 0);
+  if (!proc_file) {
+    printk(KERN_INFO "VT-GPIO_ERROR: can not open %s\n", path);
+    return -1;
+  }
+
+  ret = file_write(proc_file, 0, val, val_len);
+
+  if (ret < 0) {
+    printk(KERN_INFO "VT-GPIO_ERROR: can not write %s\n", path);
+    return -1;
+  }
+  ret = file_sync(proc_file);
+  if (ret < 0) {
+    printk(KERN_INFO "VT-GPIO_ERROR: can not sync %s\n", path);
+    return -1;
+  }
+  file_close(proc_file);
+
+  return 0;
+}
+
 /**
  * @brief Function to add pids to VT.
  */
@@ -530,92 +601,6 @@ static void __exit vtgpio_exit(void) {
   free_irq(irqNumber2, NULL);
   gpio_free(gpioSIG2);
   printk(KERN_INFO "VT-GPIO: Successfully leaving LKM\n");
-}
-
-int write_proc_field(pid_t pid, char *field, char *val) {
-  int ret;
-  struct file *proc_file;
-  char path[PATH_MAX];
-  size_t val_len = strlen(val);
-
-  sprintf(path, "/proc/%d/%s", pid, field);
-  proc_file = file_open(path, O_WRONLY, 0);
-  if (!proc_file) {
-    printk(KERN_INFO "VT-GPIO_ERROR: can not open %s\n", path);
-    return -1;
-  }
-
-  ret = file_write(proc_file, 0, val, val_len);
-
-  if (ret < 0) {
-    printk(KERN_INFO "VT-GPIO_ERROR: can not write %s\n", path);
-    return -1;
-  }
-  ret = file_sync(proc_file);
-  if (ret < 0) {
-    printk(KERN_INFO "VT-GPIO_ERROR: can not sync %s\n", path);
-    return -1;
-  }
-  file_close(proc_file);
-
-  return 0;
-}
-
-struct file *file_open(const char *path, int flags, int rights) {
-  struct file *filp = NULL;
-  mm_segment_t oldfs;
-  int err = 0;
-
-  oldfs = get_fs();
-  set_fs(get_ds());
-  filp = filp_open(path, flags, rights);
-  set_fs(oldfs);
-  if (IS_ERR(filp)) {
-    err = PTR_ERR(filp);
-    return NULL;
-  }
-  return filp;
-}
-
-void file_close(struct file *file) {
-  filp_close(file, NULL);
-}
-
-int file_read(struct file *file,
-              unsigned long long offset,
-              unsigned char *data,
-              unsigned int size) {
-  mm_segment_t oldfs;
-  int ret;
-
-  oldfs = get_fs();
-  set_fs(get_ds());
-
-  ret = vfs_read(file, data, size, &offset);
-
-  set_fs(oldfs);
-  return ret;
-}
-
-int file_write(struct file *file,
-               unsigned long long offset,
-               unsigned char *data,
-               unsigned int size) {
-  mm_segment_t oldfs;
-  int ret;
-
-  oldfs = get_fs();
-  set_fs(get_ds());
-
-  ret = vfs_write(file, data, size, &offset);
-
-  set_fs(oldfs);
-  return ret;
-}
-
-int file_sync(struct file *file) {
-  vfs_fsync(file, 0);
-  return 0;
 }
 
 module_init(vtgpio_init);
