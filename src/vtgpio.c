@@ -540,8 +540,6 @@ static struct kobject *vt_kobj;
  */
 static irq_handler_t vtgpio_irq_handler(unsigned int irq, void *dev_id,
                                         struct pt_regs *regs) {
-  trace_printk(KERN_INFO "rise\n");
-
   // Record how long until the timer expires, then cancel it.
   if (timer_pending(&vt_timer) && time_is_after_jiffies(vt_timer.expires)) {
     leftover = vt_timer.expires - jiffies;
@@ -558,8 +556,6 @@ static irq_handler_t vtgpio_irq_handler(unsigned int irq, void *dev_id,
  */
 static irq_handler_t vtgpio_irq_handler_fall(unsigned int irq, void *dev_id,
                                              struct pt_regs *regs) {
-  trace_printk(KERN_INFO "fall\n");
-
   resume();
   if (period > 0) {
     if (leftover > 0) { // Resumed from interrupt event.
