@@ -1,3 +1,44 @@
+# New Content
+
+### Entry point
+The entry point for all pausing happens **asyncronously** through `vtgpio_irq_handler`.
+
+The entry point for all resuming happens **asyncronously** through `vtgpio_irq_handler_fall`
+
+### Triggerering `vtgpio_irq_handler`
+This function is caused when the hardware interrupt handler detects a **rising edge** on the associated pin 1. 
+
+### Triggering `vtgpio_irq_handler_fall`
+This function is caused when the hardware interrupt handler detects a **falling edge** on the associated pin 2. 
+
+### Remote calling vs local calling
+
+A signal caused by a remote host is treated the same as a local host. The User space process **NOT IN VT** must be responsible for resuming the virtual time system by writing `unfreeze` to `/sys/vt/VT7/mode` on the host that triggered the pause.
+
+### Pausing and Resuming 
+
+Triggering `vtgpio_irq_handler` and `vtgpio_irq_handler_fall` locally is done by:
+1. write `freeze` to `/sys/vt/VT7/mode` This is the case in dynamic mode, on demand mode, or "at runtime" however we end up calling it.
+1. if a period is written at the time of loading, the periodic callback triggers `vtgpio_irq_handler`. It is up to a (any) user space program to resume. **Note** this must be done by polling `/sys/vt/VT7/syncpause` 
+
+### misc notes
+If we are already paused, i.e., by realtime sync event (local or remote) -- the module does not distinguish (though it could) this function can not get called again until `vtgpio_irq_handler`. This is due to the rules of physics. However if temorally indistinguishable events happen at near-the-same time, the system wont call pause until all events are processed.
+
+
+### Pause 
+Pause only calls `sequential_io(FREEZE)` which performs 2 steps:
+
+1. sends the `SIGSTOP` command to registered PIDS. 
+1. captures time variables to use for clock offsets 
+
+### Resume
+Resume only calls `sequential_io(RESUME)` which performs 2 steps:
+
+1. sends the `SIGCONT` command to registered PIDS. 
+1. captures time variables to use for clock offsets 
+
+
+
 # emb-vt
 Distibuted Kernel Module and modified time keeping functions for enabling virtual time in distributed heterogeneous embedded linux environments
 
