@@ -547,7 +547,8 @@ static irq_handler_t vtgpio_irq_handler(unsigned int irq, void *dev_id,
     leftover = vt_timer.expires - jiffies;
     del_timer(&vt_timer);
   }
-  pause();
+  gpio_direction_output(gpio_sig1, 1);
+  //pause();
 
   return (irq_handler_t)IRQ_HANDLED;
 }
@@ -560,13 +561,14 @@ static irq_handler_t vtgpio_irq_handler_fall(unsigned int irq, void *dev_id,
   trace_printk(KERN_INFO "fall\n");
 
   resume();
-  if (leftover > 0) { // Resumed from interrupt event.
-    vt_timer.expires = jiffies + leftover;
-  } else { // Resumed from synchronization event.
-    vt_timer.expires = jiffies + msecs_to_jiffies(period);
+  if (period > 0) {
+    if (leftover > 0) { // Resumed from interrupt event.
+      vt_timer.expires = jiffies + leftover;
+    } else { // Resumed from synchronization event.
+      vt_timer.expires = jiffies + msecs_to_jiffies(period);
+    }
+    add_timer(&vt_timer);
   }
-  add_timer(&vt_timer);
-
   return (irq_handler_t)IRQ_HANDLED;
 }
 
@@ -635,6 +637,7 @@ static int __init vtgpio_init(void) {
 
   if (period > 0) {
     init_timer(&vt_timer);
+    printk(KERN_INFO "VT-GPIO: period set to: %d\n", period);
     vt_timer.expires = jiffies + msecs_to_jiffies(period);;
     vt_timer.function = vt_timer_handler;
     vt_timer.data = 0;
