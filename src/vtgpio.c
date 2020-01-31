@@ -9,15 +9,19 @@
 #include <linux/gpio.h>
 #include <linux/init.h>
 #include <linux/interrupt.h>
+#include <linux/jiffies.h>
 #include <linux/kernel.h>
 #include <linux/kobject.h>
 #include <linux/kthread.h>
 #include <linux/module.h>
-#include <linux/sched.h>
+#include <linux/moduleparam.h>
 #include <linux/pid.h>
+#include <linux/sched.h>
 #include <linux/slab.h>
 #include <linux/string.h>
+#include <linux/stat.h>
 #include <linux/sysfs.h>
+#include <linux/timer.h>
 
 #include "vtgpio.h"
 
@@ -66,6 +70,26 @@ static s64 freeze_now = 0;
 // Name of filesystem accessable from user space.
 static char vt_name[6] = "vtXXX";
 
+static uint period = 0;
+module_param(period, uint, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
+MODULE_PARM_DESC(period, "Period in milliseconds for periodic synchronization requests");
+
+struct timer_list vt_timer;
+static unsigned long leftover = 0; // Leftover time for rescheduled vt_timer.
+
+/**
+ * VT Timer's callback function.
+ */
+static void vt_timer_handler(unsigned long data) {
+  if (mode == DISABLED) {
+    mode = ENABLED;
+    // so that we know whether we resume from interrupt or periodic event.
+    leftover = 0;
+    gpio_direction_output(gpio_sig1, 1);
+    //pause();
+  }
+}
+
 /**
  * @brief Core function for pausing processes.
  */
@@ -79,11 +103,11 @@ void pause(void) {
   getnstimeofday(&seconds);
 
 #ifndef QUIET
-  VT_PRINTK("VT_PAUSE\n");
-  VT_PRINTK("VT-GPIO_TIME: TIME-RISE: %llu %llu nanoseconds",
+  printk(KERN_INFO "VT_PAUSE\n");
+  printk(KERN_INFO "VT-GPIO_TIME: TIME-RISE: %llu %llu nanoseconds",
             (unsigned long long)seconds.tv_sec,
             (unsigned long long)seconds.tv_nsec);
-  VT_PRINTK("VT-GPIO: Rising Edge detected");
+  printk(KERN_INFO "VT-GPIO: Rising Edge detected");
 #endif // QUIET
 #endif // BENCHMARK
 
@@ -106,10 +130,10 @@ void pause(void) {
   printk(KERN_INFO "VT-GPIO_BENCHMARK: Pause ; %llu ; %llu ",
          ((unsigned long long)oh_secs), ((unsigned long long)oh_nsecs));
 #ifndef QUIET
-  VT_PRINTK("VT-GPIO_TIME: TIME-RISE: %llu %llu nanoseconds",
+  printk(KERN_INFO "VT-GPIO_TIME: TIME-RISE: %llu %llu nanoseconds",
             (unsigned long long)seconds_end.tv_sec,
             (unsigned long long)seconds_end.tv_nsec);
-  VT_PRINTK("VT-GPIO_TIME: TIME-PAUSE: %llu %llu nanoseconds",
+  printk(KERN_INFO "VT-GPIO_TIME: TIME-PAUSE: %llu %llu nanoseconds",
             ((unsigned long long)seconds_end.tv_sec -
              (unsigned long long)seconds.tv_sec),
             ((unsigned long long)seconds_end.tv_nsec -
@@ -131,11 +155,11 @@ void resume(void) {
   getnstimeofday(&seconds);
 
 #ifndef QUIET
-  VT_PRINTK("VT_RESUME\n");
-  VT_PRINTK("VT-GPIO_TIME: TIME-FALL: %llu %llu nanoseconds",
+  printk(KERN_INFO "VT_RESUME\n");
+  printk(KERN_INFO "VT-GPIO_TIME: TIME-FALL: %llu %llu nanoseconds",
             (unsigned long long)seconds.tv_sec,
             (unsigned long long)seconds.tv_nsec);
-  VT_PRINTK("VT-GPIO: Falling Edge detected");
+  printk(KERN_INFO "VT-GPIO: Falling Edge detected");
 #endif // QUIET
 #endif // BENCHMARK
 
@@ -158,10 +182,10 @@ void resume(void) {
   printk(KERN_INFO "VT-GPIO_BENCHMARK: Resume ; %llu ; %llu ",
          ((unsigned long long)oh_secs), ((unsigned long long)oh_nsecs));
 #ifndef QUIET
-  VT_PRINTK("VT-GPIO_TIME: TIME-FALL: %llu %llu nanoseconds",
+  printk(KERN_INFO "VT-GPIO_TIME: TIME-FALL: %llu %llu nanoseconds",
             (unsigned long long)seconds_end.tv_sec,
             (unsigned long long)seconds_end.tv_nsec);
-  VT_PRINTK("VT-GPIO_TIME: TIME-RESUME: %llu %llu nanoseconds",
+  printk(KERN_INFO "VT-GPIO_TIME: TIME-RESUME: %llu %llu nanoseconds",
             ((unsigned long long)seconds_end.tv_sec -
              (unsigned long long)seconds.tv_sec),
             ((unsigned long long)seconds_end.tv_nsec -
@@ -250,7 +274,7 @@ static int dilate_proc(int pid) {
 
   ret = sprintf(tdf_str, "%d", tdf);
   write_proc_field((pid_t)pid, "dilation", tdf_str);
-  VT_PRINTK("VT-GPIO: Dilating %d\n", pid);
+  printk(KERN_INFO "VT-GPIO: Dilating %d\n", pid);
   return ret;
 }
 
@@ -290,7 +314,7 @@ static int sequential_io(enum IO io) {
     for (i = 0; i < num_procs; ++i) {
       rc = kill_pid(pids[i], SIGSTOP, 1);
       if (rc != 0) {
-        VT_PRINTK("VT-GPIO: Fail to SIGSTOP %d\n", all_pid_nrs[i]);
+        printk(KERN_INFO "VT-GPIO: Fail to SIGSTOP %d\n", all_pid_nrs[i]);
       }
     }
     __getnstimeofday(&ts);
@@ -310,7 +334,7 @@ static int sequential_io(enum IO io) {
     for (i = 0; i < num_procs; ++i) {
       rc = kill_pid(pids[i], SIGCONT, 1);
       if (rc != 0) {
-        VT_PRINTK("VT-GPIO: Fail to SIGCONT %d\n", all_pid_nrs[i]);
+        printk(KERN_INFO "VT-GPIO: Fail to SIGCONT %d\n", all_pid_nrs[i]);
       }
     }
     break;
@@ -338,7 +362,7 @@ static int sequential_io_round_robin(enum IO io) {
     for (i = round_robin, c = 0; c < num_procs; i = (i + 1) % num_procs, ++c) {
       rc = kill_pid(pids[i], SIGSTOP, 1);
       if (rc != 0) {
-        VT_PRINTK("VT-GPIO: Fail to SIGSTOP %d\n", all_pid_nrs[i]);
+        printk(KERN_INFO "VT-GPIO: Fail to SIGSTOP %d\n", all_pid_nrs[i]);
       }
     }
     __getnstimeofday(&ts);
@@ -358,7 +382,7 @@ static int sequential_io_round_robin(enum IO io) {
     for (i = round_robin, c = 0; c < num_procs; i = (i + 1) % num_procs, ++c) {
       rc = kill_pid(pids[i], SIGCONT, 1);
       if (rc != 0) {
-        VT_PRINTK("VT-GPIO: Fail to SIGCONT %d\n", all_pid_nrs[i]);
+        printk(KERN_INFO "VT-GPIO: Fail to SIGCONT %d\n", all_pid_nrs[i]);
       }
     }
     round_robin = (round_robin + 1) % num_procs;
@@ -448,7 +472,7 @@ static ssize_t mode_store(struct kobject *kobj,
   if (strncmp(buf, "freeze", count - 1) == 0) {
     mode = ENABLED;
 #ifndef QUIET
-    VT_PRINTK("VT-GPIO: pause\n");
+    printk(KERN_INFO "VT-GPIO: pause\n");
 #endif
     // vt has been triggered locally,
     // we need to quickly change to output mode
@@ -456,7 +480,7 @@ static ssize_t mode_store(struct kobject *kobj,
   } else if (strncmp(buf, "unfreeze", count - 1) == 0) {
     mode = DISABLED;
 #ifndef QUIET
-    VT_PRINTK("VT-GPIO: resume\n");
+    printk(KERN_INFO "VT-GPIO: resume\n");
 #endif
     // change cfg, go low
     gpio_direction_output(gpio_sig1, 0);
@@ -465,9 +489,19 @@ static ssize_t mode_store(struct kobject *kobj,
   return count;
 }
 
-static struct kobj_attribute mode_attr =
-    __ATTR(mode, 0660, mode_show, mode_store);
+static ssize_t syncpause_show(struct kobject *kojb,
+                              struct kobj_attribute *attr,
+                              char *buf) {
+  if (mode == ENABLED && leftover == 0) {
+    return sprintf(buf, "1");
+  } else {
+    return sprintf(buf, "0");
+  }
+}
+
+static struct kobj_attribute mode_attr = __ATTR(mode, 0660, mode_show, mode_store);
 static struct kobj_attribute tdf_attr = __ATTR(tdf, 0660, tdf_show, tdf_store);
+static struct kobj_attribute syncpause_attr = __ATTR_RO(syncpause);
 
 DECLARE_PID_ATTR(01);
 DECLARE_PID_ATTR(02);
@@ -487,7 +521,7 @@ DECLARE_PID_ATTR(15);
 DECLARE_PID_ATTR(16);
 
 static struct attribute *vt_attrs[] = {
-    &mode_attr.attr, &tdf_attr.attr,
+    &mode_attr.attr, &tdf_attr.attr, &syncpause_attr.attr,
     &pid_01_attr.attr, &pid_02_attr.attr, &pid_03_attr.attr, &pid_04_attr.attr,
     &pid_05_attr.attr, &pid_06_attr.attr, &pid_07_attr.attr, &pid_08_attr.attr,
     &pid_09_attr.attr, &pid_10_attr.attr, &pid_11_attr.attr, &pid_12_attr.attr,
@@ -507,7 +541,16 @@ static struct kobject *vt_kobj;
  */
 static irq_handler_t vtgpio_irq_handler(unsigned int irq, void *dev_id,
                                         struct pt_regs *regs) {
-  trace_printk(KERN_INFO "rise\n");
+  // Record how long until the timer expires, then cancel it.
+  if (timer_pending(&vt_timer) && time_is_after_jiffies(vt_timer.expires)) {
+    leftover = vt_timer.expires - jiffies;
+#ifndef QUIET
+    printk(KERN_INFO "VT-GPIO: leftover time (jiffies): %lu\n", leftover);
+    printk(KERN_INFO "VT-GPIO: leftover time (msec): %u\n", jiffies_to_msecs(leftover));
+#endif
+    del_timer(&vt_timer);
+  }
+  //gpio_direction_output(gpio_sig1, 1);
   pause();
   return (irq_handler_t)IRQ_HANDLED;
 }
@@ -517,8 +560,23 @@ static irq_handler_t vtgpio_irq_handler(unsigned int irq, void *dev_id,
  */
 static irq_handler_t vtgpio_irq_handler_fall(unsigned int irq, void *dev_id,
                                              struct pt_regs *regs) {
-  trace_printk(KERN_INFO "fall\n");
+  int ret;
+#ifndef QUIET
+  printk(KERN_INFO "VT-GPIO: Falling w leftover: %d\n", leftover);
+#endif
   resume();
+  if (period > 0) {
+    if (leftover > 0) { // Resumed from interrupt event.
+      //vt_timer.expires = jiffies + leftover;
+      ret = mod_timer(&vt_timer, jiffies + leftover);
+      if(ret) printk(KERN_INFO "Error in mod_timer\n");
+    } else { // Resumed from synchronization event.
+      //vt_timer.expires = jiffies + msecs_to_jiffies(period);
+      ret = mod_timer(&vt_timer, jiffies + msecs_to_jiffies(period));
+      if(ret) printk(KERN_INFO "Error in mod_timer\n");
+    }
+    //add_timer(&vt_timer);
+  }
   return (irq_handler_t)IRQ_HANDLED;
 }
 
@@ -585,6 +643,16 @@ static int __init vtgpio_init(void) {
   printk(KERN_INFO "VT-GPIO: The interrupt rising request result is %d\n",
          result);
 
+  if (period > 0) {
+    init_timer(&vt_timer);
+    printk(KERN_INFO "VT-GPIO: period set to: %d\n", period);
+    vt_timer.expires = jiffies + msecs_to_jiffies(period);;
+    vt_timer.function = vt_timer_handler;
+    vt_timer.data = 0;
+    add_timer(&vt_timer);
+    printk(KERN_INFO "VT-GPIO: Enable periodic mode with timer\n");
+  }
+
   return result;
 }
 
@@ -600,6 +668,11 @@ static void __exit vtgpio_exit(void) {
   gpio_free(gpio_sig3);
   free_irq(irq_num2, NULL);
   gpio_free(gpio_sig2);
+
+  if (period > 0 && timer_pending(&vt_timer)) {
+    del_timer(&vt_timer);
+  }
+
   printk(KERN_INFO "VT-GPIO: Successfully leaving LKM\n");
 }
 

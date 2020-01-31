@@ -8,7 +8,7 @@
 #define SEC_NSEC 1000000000 // 10^9 nsec in sec.
 
 #ifndef BENCHMARK
-#define BENCHMARK
+#define BENCHMARK 
 #endif // #ifndef BENCHMARK
 
 // Disable round robin pause/resume scheduling.
@@ -17,7 +17,8 @@
 #endif
 
 #define FTRACE 0 // Value to toggle ftrace vs regular prints.
-#define QUIET 1 // value to surpress real-time pause/resume.
+#define QUIET 0 // value to surpress real-time pause/resume.
+//#undef QUIET
 
 // Functions for pausing resuming processes and clocks.
 void pause(void);
@@ -29,15 +30,6 @@ enum modes { DISABLED, ENABLED };
 // Types of operations in sequencial IO.
 enum IO { RESUME, FREEZE, DILATE };
 
-// Macros for generating repeated code.
-#define VT_PRINTK(fmt, ...)                                         \
-  do {                                                              \
-    if (FTRACE) {                                                   \
-      trace_printk(KERN_INFO fmt, __VA_ARGS__);                     \
-    } else {                                                        \
-      printk(KERN_INFO fmt, __VA_ARGS__);                           \
-    }                                                               \
-  } while (0)
 
 #define SHOW_HANDLER(IDX)                                           \
   ssize_t pid_##IDX##_show(struct kobject *kobj,                    \
