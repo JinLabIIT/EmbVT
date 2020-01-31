@@ -544,10 +544,14 @@ static irq_handler_t vtgpio_irq_handler(unsigned int irq, void *dev_id,
   // Record how long until the timer expires, then cancel it.
   if (timer_pending(&vt_timer) && time_is_after_jiffies(vt_timer.expires)) {
     leftover = vt_timer.expires - jiffies;
+#ifndef QUIET
+    printk(KERN_INFO "VT-GPIO: leftover time (jiffies): %lu\n", leftover);
+    printk(KERN_INFO "VT-GPIO: leftover time (msec): %u\n", jiffies_to_msecs(leftover));
+#endif
     del_timer(&vt_timer);
   }
-  gpio_direction_output(gpio_sig1, 1);
-
+  //gpio_direction_output(gpio_sig1, 1);
+  pause();
   return (irq_handler_t)IRQ_HANDLED;
 }
 
@@ -556,14 +560,22 @@ static irq_handler_t vtgpio_irq_handler(unsigned int irq, void *dev_id,
  */
 static irq_handler_t vtgpio_irq_handler_fall(unsigned int irq, void *dev_id,
                                              struct pt_regs *regs) {
+  int ret;
+#ifndef QUIET
+  printk(KERN_INFO "VT-GPIO: Falling w leftover: %d\n", leftover);
+#endif
   resume();
   if (period > 0) {
     if (leftover > 0) { // Resumed from interrupt event.
-      vt_timer.expires = jiffies + leftover;
+      //vt_timer.expires = jiffies + leftover;
+      ret = mod_timer(&vt_timer, jiffies + leftover);
+      if(ret) printk(KERN_INFO "Error in mod_timer\n");
     } else { // Resumed from synchronization event.
-      vt_timer.expires = jiffies + msecs_to_jiffies(period);
+      //vt_timer.expires = jiffies + msecs_to_jiffies(period);
+      ret = mod_timer(&vt_timer, jiffies + msecs_to_jiffies(period));
+      if(ret) printk(KERN_INFO "Error in mod_timer\n");
     }
-    add_timer(&vt_timer);
+    //add_timer(&vt_timer);
   }
   return (irq_handler_t)IRQ_HANDLED;
 }
