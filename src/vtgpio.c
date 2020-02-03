@@ -493,9 +493,9 @@ static ssize_t syncpause_show(struct kobject *kojb,
                               struct kobj_attribute *attr,
                               char *buf) {
   if (mode == ENABLED && leftover == 0) {
-    return sprintf(buf, "1");
+    return sprintf(buf, "1\n");
   } else {
-    return sprintf(buf, "0");
+    return sprintf(buf, "0\n");
   }
 }
 

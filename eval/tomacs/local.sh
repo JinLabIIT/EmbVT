@@ -122,7 +122,7 @@ do
     ########################
     ### setup experiment ###
     ########################
-    sleep 60
+    sleep 20
     echo "setting up experiment with ${i} processes"
     # declare array
     declare -a pids

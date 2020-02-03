@@ -421,7 +421,7 @@ trap 'response' 10
 trap 'response2' 12
 trap 'cleanup' 1 2 3 6
 
-should_wait=1
+should_wait=0
 
 cleanup()
 {
@@ -465,7 +465,7 @@ setup()
     rmmod vtgpio
     cd /home/EmbVT/src
     make
-    insmod vtgpio.ko
+    insmod vtgpio.ko period=1000
     cd /home/EmbVT/eval/tomacs
     # clear dmesg
     sleep 5
@@ -473,7 +473,7 @@ setup()
     ########################
     ### setup experiment ###
     ########################
-    sleep 60
+    sleep 20
     echo "setting up experiment with ${i} processes"
     #
     # z = upperbound
@@ -601,16 +601,21 @@ main_loop()
 
     while [ $LOPP -lt 128 ];
     do
+	echo $LOPP
 	let LOPP=LOPP+1
 	# determine who should pause next
 	if [ ${pause_order[$LOPP-1]} -eq 8 ]; then
 	    # local
-	    while [ $(cat /sys/vt/VT7/syncpause) != 1 ];
+	    while [ $(cat /sys/vt/VT7/syncpause) -ne 1 ];
 	    do
+		echo "waiting"
+		#cat /sys/vt/VT7/syncpause
 		sleep .1
 	    done
+	    echo "unfreeze"
 	    echo "unfreeze" > /sys/vt/VT7/mode
 	else
+	    echo "should not be here"
 	    should_wait=1
 	    j=${IPs[${pause_order[${LOPP}-1]}]}
 	    echo $j
@@ -628,12 +633,14 @@ main_loop()
 	echo ' ' >> /home/EmbVT/eval/tomacs/skew/${p2d}/skew_${i}.log
 
 	#ssh to remote  sig 10
+	echo "${IPs[@]}"
 	for j in "${IPs[@]}"
 	do
 	    echo $j
 	    #echo ssh -i /home/.ssh/id_ecdsa "root@${i}" "kill -10 `(ssh -i /home/.ssh/id_ecdsa cat /home/EmbVT/eval/tomacs/local.sh.pid)`"       
             ssh -i /home/.ssh/id_ecdsa "root@${j}" "kill -10 `(ssh -i /home/.ssh/id_ecdsa root@${j} cat /home/EmbVT/eval/tomacs/local.sh.pid)`"
         done
+	echo "signals sent"
         sleep 1
     done
 
