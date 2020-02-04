@@ -599,12 +599,13 @@ main_loop()
 	ssh -i /home/.ssh/id_ecdsa "root@${j}" "kill -10 `(ssh -i /home/.ssh/id_ecdsa root@${j} cat /home/EmbVT/eval/tomacs/local.sh.pid)`"
     done
 
-    while [ $LOPP -lt 128 ];
+    while [ $LOPP -lt 2048 ];
     do
 	echo $LOPP
 	let LOPP=LOPP+1
 	# determine who should pause next
-	if [ ${pause_order[$LOPP-1]} -eq 8 ]; then
+	#if [ ${pause_order[$LOPP-1]} -eq 8 ]; then
+	if [ 8 -eq 8 ]; then
 	    # local
 	    while [ $(cat /sys/vt/VT7/syncpause) -ne 1 ];
 	    do
