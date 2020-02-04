@@ -1,5 +1,8 @@
 sleep 250000 &
-echo $! > /sys/vt/VT7/pid_01
+pid_path="/sys/vt/VT7/pid_01"
+echo $! > $pid_path
+cat /sys/vt/VT7/pid_01
+
 rmmod vtgpio
 cd /home/EmbVT/src
 make
