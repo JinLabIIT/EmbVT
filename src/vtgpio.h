@@ -18,7 +18,7 @@
 
 #define FTRACE 0 // Value to toggle ftrace vs regular prints.
 #define QUIET 0 // value to surpress real-time pause/resume.
-//#undef QUIET
+#undef QUIET
 
 // Functions for pausing resuming processes and clocks.
 void pause(void);
