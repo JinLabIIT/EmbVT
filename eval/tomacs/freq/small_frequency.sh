@@ -12,6 +12,7 @@ for i in 1 0.5 0.25 0.125 0.0625 0.03125 0.015625; do
     loop=0
 
     while [ $loop -lt 2048 ]; do
+	echo $loop / 2048 $i / 1 0.5 0.25 0.125 0.0625 0.03125 0.015625
 	let loop=loop+1
 	echo "freeze" > /sys/vt/VT7/mode
 	sleep $i
@@ -34,6 +35,7 @@ for i in 1 0.5 0.25 0.125 0.0625 0.03125 0.015625; do
     loop=0
 
     while [ $loop -lt 2048 ]; do
+	echo $loop / 2048 $i / 1 0.5 0.25 0.125 0.0625 0.03125 0.015625
 	let loop=loop+1
 	while [ $(cat /sys/vt/VT7/syncpause) -ne 1 ];
 	do
